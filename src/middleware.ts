@@ -123,17 +123,35 @@ export function middleware(request: NextRequest) {
   const isAllowed = isIPAllowed(clientIP, allowedIPs);
 
   if (!isAllowed) {
+    const ipType = clientIP.includes(':') ? 'IPv6' : 'IPv4';
+    const hasIPv4 = allowedIPs.some(ip => !ip.includes(':') && !ip.includes('/'));
+    const hasIPv6 = allowedIPs.some(ip => ip.includes(':'));
+    
     logger.warn(`[Middleware] Access denied for IP: ${clientIP}`, {
       allowedIPs,
       path: request.nextUrl.pathname,
       clientIP,
-      ipType: clientIP.includes(':') ? 'IPv6' : 'IPv4',
+      ipType,
+      hasIPv4InList: hasIPv4,
+      hasIPv6InList: hasIPv6,
     });
+    
+    let hint = 'Check that your IP matches exactly (including IPv4 vs IPv6)';
+    if (ipType === 'IPv6' && hasIPv4 && !hasIPv6) {
+      hint = `Your connection is using IPv6 (${clientIP}), but only IPv4 addresses are in the allowed list. Add this IPv6 address to ALLOWED_IP_ADDRESSES, or add both your IPv4 and IPv6 addresses.`;
+    } else if (ipType === 'IPv4' && hasIPv6 && !hasIPv4) {
+      hint = `Your connection is using IPv4 (${clientIP}), but only IPv6 addresses are in the allowed list. Add this IPv4 address to ALLOWED_IP_ADDRESSES.`;
+    }
+    
     return NextResponse.json(
       { 
         error: 'Access denied: IP address not authorized',
         detectedIP: clientIP,
-        hint: 'Check that your IP matches exactly (including IPv4 vs IPv6)'
+        ipType,
+        hint,
+        solution: ipType === 'IPv6' 
+          ? `Add this IPv6 address to ALLOWED_IP_ADDRESSES: ${clientIP}`
+          : `Add this IPv4 address to ALLOWED_IP_ADDRESSES: ${clientIP}`
       },
       { status: 403 }
     );

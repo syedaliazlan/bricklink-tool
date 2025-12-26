@@ -62,6 +62,9 @@ export async function GET(request: NextRequest) {
     },
   };
 
+  // Always include client IP detection (for debugging access issues)
+  const clientIP = getClientIP(request);
+  
   // Only include detailed diagnostics for authorized requests
   if (isAuthorizedRequest) {
     health.diagnostics = {
@@ -75,8 +78,13 @@ export async function GET(request: NextRequest) {
       ipRestrictions: {
         enabled: !!process.env.ALLOWED_IP_ADDRESSES,
         allowedIPsCount: process.env.ALLOWED_IP_ADDRESSES?.split(',').filter(ip => ip.trim().length > 0).length || 0,
+        detectedClientIP: clientIP || 'Unable to detect',
       },
     };
+  } else {
+    // Even for unauthorized requests, show detected IP to help with debugging
+    health.detectedClientIP = clientIP || 'Unable to detect';
+    health.ipRestrictionHint = 'Add this IP to ALLOWED_IP_ADDRESSES to access the API';
   }
 
   // Only run detailed diagnostics for authorized requests

@@ -3,23 +3,40 @@ import { logger } from '@/lib/utils/logger';
 
 /**
  * Get client IP address from request headers
- * Fly.io provides the client IP in Fly-Client-IP header
+ * Fly.io provides the client IP in Fly-Client-IP header (case-insensitive)
  */
 function getClientIP(request: NextRequest): string | null {
-  // Fly.io specific header
-  const flyClientIP = request.headers.get('fly-client-ip');
-  if (flyClientIP) return flyClientIP;
+  // Try multiple header name variations (case-insensitive)
+  const headerNames = [
+    'fly-client-ip',
+    'Fly-Client-IP',
+    'FLY-CLIENT-IP',
+    'x-forwarded-for',
+    'X-Forwarded-For',
+    'X-FORWARDED-FOR',
+    'x-real-ip',
+    'X-Real-IP',
+    'X-REAL-IP',
+  ];
 
-  // Fallback to X-Forwarded-For (first IP in the chain)
-  const xForwardedFor = request.headers.get('x-forwarded-for');
-  if (xForwardedFor) {
-    // X-Forwarded-For can contain multiple IPs, take the first one
-    return xForwardedFor.split(',')[0].trim();
+  for (const headerName of headerNames) {
+    const value = request.headers.get(headerName);
+    if (value) {
+      // X-Forwarded-For can contain multiple IPs, take the first one
+      const ip = value.split(',')[0].trim();
+      if (ip) {
+        logger.debug(`[Middleware] Detected IP from header ${headerName}: ${ip}`);
+        return ip;
+      }
+    }
   }
 
-  // Fallback to X-Real-IP
-  const xRealIP = request.headers.get('x-real-ip');
-  if (xRealIP) return xRealIP;
+  // Also try to get from all headers (for debugging)
+  const allHeaders: Record<string, string> = {};
+  request.headers.forEach((value, key) => {
+    allHeaders[key] = value;
+  });
+  logger.debug('[Middleware] Available headers:', Object.keys(allHeaders));
 
   return null;
 }
@@ -109,12 +126,22 @@ export function middleware(request: NextRequest) {
     logger.warn(`[Middleware] Access denied for IP: ${clientIP}`, {
       allowedIPs,
       path: request.nextUrl.pathname,
+      clientIP,
+      ipType: clientIP.includes(':') ? 'IPv6' : 'IPv4',
     });
     return NextResponse.json(
-      { error: 'Access denied: IP address not authorized' },
+      { 
+        error: 'Access denied: IP address not authorized',
+        detectedIP: clientIP,
+        hint: 'Check that your IP matches exactly (including IPv4 vs IPv6)'
+      },
       { status: 403 }
     );
   }
+
+  logger.info(`[Middleware] Access granted for IP: ${clientIP}`, {
+    path: request.nextUrl.pathname,
+  });
 
   logger.debug(`[Middleware] Access granted for IP: ${clientIP}`, {
     path: request.nextUrl.pathname,

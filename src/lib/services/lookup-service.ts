@@ -43,38 +43,65 @@ async function fetchSetPriceData(
   }
   
   try {
+    console.log(`[Lookup] Starting fetch for set ${setNumber} (${condition}, ${currency})`);
+    
     // Fetch data sequentially to avoid rate limit issues
     // Each set makes 3 API calls, so we space them out with small delays
+    console.log(`[Lookup] Fetching sold data for ${setNumber}...`);
     const soldData = await client.getPriceGuideSold({
       itemType: 'SET',
       itemNo: setNumber,
       condition: brickCondition,
       currency,
     }).catch(err => {
-      console.warn(`[Lookup] Failed to fetch sold data for ${setNumber}:`, err instanceof Error ? err.message : 'Unknown error');
+      console.error(`[Lookup] Failed to fetch sold data for ${setNumber}:`, {
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        setNumber,
+        condition: brickCondition,
+        currency,
+      });
       return null;
     });
+    console.log(`[Lookup] Sold data for ${setNumber}:`, soldData ? 'Received' : 'Failed');
     
     // Small delay between the 3 API calls per set
     await new Promise(resolve => setTimeout(resolve, 100));
     
+    console.log(`[Lookup] Fetching stock data for ${setNumber}...`);
     const stockData = await client.getPriceGuideStock({
       itemType: 'SET',
       itemNo: setNumber,
       condition: brickCondition,
       currency,
     }).catch(err => {
-      console.warn(`[Lookup] Failed to fetch stock data for ${setNumber}:`, err instanceof Error ? err.message : 'Unknown error');
+      console.error(`[Lookup] Failed to fetch stock data for ${setNumber}:`, {
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        setNumber,
+        condition: brickCondition,
+        currency,
+      });
       return null;
     });
+    console.log(`[Lookup] Stock data for ${setNumber}:`, stockData ? 'Received' : 'Failed');
     
     // Small delay between calls
     await new Promise(resolve => setTimeout(resolve, 100));
     
+    console.log(`[Lookup] Fetching item data for ${setNumber}...`);
     const itemData = await client.getItem('SET', setNumber).catch(err => {
-      console.warn(`[Lookup] Failed to fetch item data for ${setNumber}:`, err instanceof Error ? err.message : 'Unknown error');
+      console.error(`[Lookup] Failed to fetch item data for ${setNumber}:`, {
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        setNumber,
+      });
       return null;
     });
+    console.log(`[Lookup] Item data for ${setNumber}:`, itemData ? 'Received' : 'Failed');
     
     const result: SetPriceResult = {
       setNumber,
@@ -92,6 +119,14 @@ async function fetchSetPriceData(
       currency,
       lastUpdated: new Date().toISOString(),
     };
+    
+    console.log(`[Lookup] Successfully fetched data for ${setNumber}:`, {
+      hasName: !!result.setName,
+      timesSold: result.timesSold,
+      avgSoldPrice: result.avgSoldPrice,
+      itemsForSale: result.itemsForSale,
+      avgSalePrice: result.avgSalePrice,
+    });
     
     // Cache the result (store decoded name to avoid re-decoding on cache hit)
     const decodedName = decodeHtmlEntities(itemData?.name);
@@ -111,7 +146,14 @@ async function fetchSetPriceData(
     
     return result;
   } catch (error) {
-    console.error(`[Lookup] Error fetching data for ${setNumber}:`, error instanceof Error ? error.message : 'Unknown error');
+    console.error(`[Lookup] Error fetching data for ${setNumber}:`, {
+      error: error instanceof Error ? error.message : String(error),
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+      stack: error instanceof Error ? error.stack : undefined,
+      setNumber,
+      condition,
+      currency,
+    });
     return {
       setNumber,
       condition,

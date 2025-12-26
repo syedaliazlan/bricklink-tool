@@ -26,20 +26,56 @@ export async function GET() {
     },
   };
 
-  // Try to get server's public IP
+  // Try to get server's public IP from multiple sources
+  const expectedIP = '149.248.197.193'; // Your Fly.io dedicated IPv4
+  health.diagnostics.expectedIP = expectedIP;
+  
   try {
-    console.log('[Health] Attempting to detect server IP...');
-    const ipResponse = await fetch('https://api.ipify.org?format=json', {
-      signal: AbortSignal.timeout(5000), // 5 second timeout
-    });
-    if (ipResponse.ok) {
-      const ipData = await ipResponse.json();
-      health.diagnostics.serverIP = ipData.ip;
-      console.log('[Health] Server IP detected:', ipData.ip);
+    console.log('[Health] Attempting to detect server IP from multiple sources...');
+    
+    // Try ipify.org
+    try {
+      const ipResponse = await fetch('https://api.ipify.org?format=json', {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (ipResponse.ok) {
+        const ipData = await ipResponse.json();
+        health.diagnostics.serverIP_ipify = ipData.ip;
+        health.diagnostics.serverIP = ipData.ip;
+        health.diagnostics.ipMatches = ipData.ip === expectedIP;
+        console.log('[Health] Server IP detected (ipify):', ipData.ip, 'Expected:', expectedIP, 'Match:', ipData.ip === expectedIP);
+      }
+    } catch (error) {
+      console.warn('[Health] ipify.org failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+    
+    // Try another service as backup
+    try {
+      const ipResponse2 = await fetch('https://ifconfig.me/ip', {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (ipResponse2.ok) {
+        const ipText = await ipResponse2.text();
+        const ip = ipText.trim();
+        health.diagnostics.serverIP_ifconfig = ip;
+        if (!health.diagnostics.serverIP) {
+          health.diagnostics.serverIP = ip;
+        }
+        health.diagnostics.ipMatches = health.diagnostics.ipMatches || (ip === expectedIP);
+        console.log('[Health] Server IP detected (ifconfig.me):', ip);
+      }
+    } catch (error) {
+      console.warn('[Health] ifconfig.me failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+    
+    if (!health.diagnostics.serverIP) {
+      health.diagnostics.serverIP = 'Unable to detect';
+      health.diagnostics.ipMatches = false;
     }
   } catch (error) {
     console.warn('[Health] Failed to detect server IP:', error instanceof Error ? error.message : 'Unknown error');
     health.diagnostics.serverIP = 'Unable to detect';
+    health.diagnostics.ipMatches = false;
   }
 
   try {

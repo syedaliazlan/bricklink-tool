@@ -21,3 +21,7 @@ primary_region = 'lhr'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024
+
+# Network configuration to ensure outbound connections use the dedicated IP
+# Note: Fly.io uses the assigned IPv4 for outbound traffic when properly configured
+# The dedicated IP (149.248.197.193) should be used for all outbound connections

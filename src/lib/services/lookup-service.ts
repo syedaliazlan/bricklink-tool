@@ -1,6 +1,7 @@
 import { getBricklinkClient } from '@/lib/bricklink';
 import { toBricklinkCondition, decodeHtmlEntities } from '@/lib/utils/formatting';
 import { getCachedData, setCachedData } from './cache';
+import { logger } from '@/lib/utils/logger';
 import pLimit from 'p-limit';
 import type { SetPriceResult } from '@/types';
 
@@ -43,18 +44,18 @@ async function fetchSetPriceData(
   }
   
   try {
-    console.log(`[Lookup] Starting fetch for set ${setNumber} (${condition}, ${currency})`);
+    logger.debug(`[Lookup] Starting fetch for set ${setNumber} (${condition}, ${currency})`);
     
     // Fetch data sequentially to avoid rate limit issues
     // Each set makes 3 API calls, so we space them out with small delays
-    console.log(`[Lookup] Fetching sold data for ${setNumber}...`);
+    logger.debug(`[Lookup] Fetching sold data for ${setNumber}...`);
     const soldData = await client.getPriceGuideSold({
       itemType: 'SET',
       itemNo: setNumber,
       condition: brickCondition,
       currency,
     }).catch(err => {
-      console.error(`[Lookup] Failed to fetch sold data for ${setNumber}:`, {
+      logger.error(`[Lookup] Failed to fetch sold data for ${setNumber}:`, {
         error: err instanceof Error ? err.message : String(err),
         errorType: err instanceof Error ? err.constructor.name : typeof err,
         stack: err instanceof Error ? err.stack : undefined,
@@ -64,19 +65,19 @@ async function fetchSetPriceData(
       });
       return null;
     });
-    console.log(`[Lookup] Sold data for ${setNumber}:`, soldData ? 'Received' : 'Failed');
+    logger.debug(`[Lookup] Sold data for ${setNumber}:`, soldData ? 'Received' : 'Failed');
     
     // Small delay between the 3 API calls per set
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log(`[Lookup] Fetching stock data for ${setNumber}...`);
+    logger.debug(`[Lookup] Fetching stock data for ${setNumber}...`);
     const stockData = await client.getPriceGuideStock({
       itemType: 'SET',
       itemNo: setNumber,
       condition: brickCondition,
       currency,
     }).catch(err => {
-      console.error(`[Lookup] Failed to fetch stock data for ${setNumber}:`, {
+      logger.error(`[Lookup] Failed to fetch stock data for ${setNumber}:`, {
         error: err instanceof Error ? err.message : String(err),
         errorType: err instanceof Error ? err.constructor.name : typeof err,
         stack: err instanceof Error ? err.stack : undefined,
@@ -86,14 +87,14 @@ async function fetchSetPriceData(
       });
       return null;
     });
-    console.log(`[Lookup] Stock data for ${setNumber}:`, stockData ? 'Received' : 'Failed');
+    logger.debug(`[Lookup] Stock data for ${setNumber}:`, stockData ? 'Received' : 'Failed');
     
     // Small delay between calls
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log(`[Lookup] Fetching item data for ${setNumber}...`);
+    logger.debug(`[Lookup] Fetching item data for ${setNumber}...`);
     const itemData = await client.getItem('SET', setNumber).catch(err => {
-      console.error(`[Lookup] Failed to fetch item data for ${setNumber}:`, {
+      logger.error(`[Lookup] Failed to fetch item data for ${setNumber}:`, {
         error: err instanceof Error ? err.message : String(err),
         errorType: err instanceof Error ? err.constructor.name : typeof err,
         stack: err instanceof Error ? err.stack : undefined,
@@ -101,7 +102,7 @@ async function fetchSetPriceData(
       });
       return null;
     });
-    console.log(`[Lookup] Item data for ${setNumber}:`, itemData ? 'Received' : 'Failed');
+    logger.debug(`[Lookup] Item data for ${setNumber}:`, itemData ? 'Received' : 'Failed');
     
     const result: SetPriceResult = {
       setNumber,
@@ -120,7 +121,7 @@ async function fetchSetPriceData(
       lastUpdated: new Date().toISOString(),
     };
     
-    console.log(`[Lookup] Successfully fetched data for ${setNumber}:`, {
+    logger.debug(`[Lookup] Successfully fetched data for ${setNumber}:`, {
       hasName: !!result.setName,
       timesSold: result.timesSold,
       avgSoldPrice: result.avgSoldPrice,
@@ -146,7 +147,7 @@ async function fetchSetPriceData(
     
     return result;
   } catch (error) {
-    console.error(`[Lookup] Error fetching data for ${setNumber}:`, {
+    logger.error(`[Lookup] Error fetching data for ${setNumber}:`, {
       error: error instanceof Error ? error.message : String(error),
       errorType: error instanceof Error ? error.constructor.name : typeof error,
       stack: error instanceof Error ? error.stack : undefined,

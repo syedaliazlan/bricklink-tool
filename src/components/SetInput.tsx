@@ -132,7 +132,8 @@ export function SetInput({ onLookupStart }: SetInputProps) {
     try {
       onLookupStart(parsedSets, forceRefresh);
     } catch (error) {
-      console.error('[SetInput] Error starting lookup:', error);
+      // Client-side error logging (always logged)
+      console.error('[SetInput] Error starting lookup:', error instanceof Error ? error.message : String(error));
       alert(error instanceof Error ? error.message : 'Failed to start lookup');
     } finally {
       setIsSubmitting(false);

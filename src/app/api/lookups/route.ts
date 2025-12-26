@@ -3,6 +3,7 @@ import { lookupJobRequestSchema } from '@/lib/utils/validation';
 import { deduplicateSets } from '@/lib/utils/validation';
 import { processSets } from '@/lib/services/lookup-service';
 import { clearAllCache } from '@/lib/services/cache';
+import { logger } from '@/lib/utils/logger';
 
 /**
  * POST /api/lookups
@@ -10,11 +11,11 @@ import { clearAllCache } from '@/lib/services/cache';
  */
 export async function POST(request: NextRequest) {
   const requestId = `api_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  console.log(`[API] [${requestId}] Received lookup request`);
+  logger.info(`[API] [${requestId}] Received lookup request`);
   
   try {
     const body = await request.json();
-    console.log(`[API] [${requestId}] Request body:`, {
+    logger.debug(`[API] [${requestId}] Request body:`, {
       setsCount: body.sets?.length || 0,
       forceRefresh: body.forceRefresh || false,
     });
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     const validation = lookupJobRequestSchema.safeParse(body);
     
     if (!validation.success) {
-      console.error(`[API] [${requestId}] Validation failed:`, validation.error.errors);
+      logger.error(`[API] [${requestId}] Validation failed:`, validation.error.errors);
       return NextResponse.json(
         { error: 'Validation failed', details: validation.error.errors },
         { status: 400 }
@@ -31,20 +32,20 @@ export async function POST(request: NextRequest) {
     }
     
     const { sets, forceRefresh } = validation.data;
-    console.log(`[API] [${requestId}] Processing ${sets.length} sets, forceRefresh: ${forceRefresh}`);
+    logger.info(`[API] [${requestId}] Processing ${sets.length} sets, forceRefresh: ${forceRefresh}`);
     
     // Clear cache if force refresh is requested
     if (forceRefresh) {
-      console.log(`[API] [${requestId}] Clearing cache (force refresh)`);
+      logger.info(`[API] [${requestId}] Clearing cache (force refresh)`);
       clearAllCache();
     }
     
     // Deduplicate sets
     const uniqueSets = deduplicateSets(sets);
-    console.log(`[API] [${requestId}] After deduplication: ${uniqueSets.length} unique sets`);
+    logger.debug(`[API] [${requestId}] After deduplication: ${uniqueSets.length} unique sets`);
     
     if (uniqueSets.length === 0) {
-      console.warn(`[API] [${requestId}] No valid sets to process`);
+      logger.warn(`[API] [${requestId}] No valid sets to process`);
       return NextResponse.json(
         { error: 'No valid sets to process' },
         { status: 400 }
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
     
     if (uniqueSets.length > 600) {
-      console.warn(`[API] [${requestId}] Too many sets: ${uniqueSets.length}`);
+      logger.warn(`[API] [${requestId}] Too many sets: ${uniqueSets.length}`);
       return NextResponse.json(
         { error: 'Maximum 600 sets allowed per lookup' },
         { status: 400 }
@@ -60,16 +61,19 @@ export async function POST(request: NextRequest) {
     }
     
     // Process sets synchronously with GBP currency
-    console.log(`[API] [${requestId}] Starting to process sets...`);
+    logger.info(`[API] [${requestId}] Starting to process sets...`);
     const startTime = Date.now();
     const results = await processSets(uniqueSets, 'GBP', forceRefresh);
     const duration = Date.now() - startTime;
     
-    console.log(`[API] [${requestId}] Processing completed:`, {
+    const successful = results.filter(r => r.status === 'success').length;
+    const failed = results.filter(r => r.status === 'error').length;
+    
+    logger.info(`[API] [${requestId}] Processing completed:`, {
       duration: `${duration}ms`,
       resultsCount: results.length,
-      successful: results.filter(r => r.status === 'success').length,
-      failed: results.filter(r => r.status === 'error').length,
+      successful,
+      failed,
     });
     
     return NextResponse.json({
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error(`[API] [${requestId}] Error processing lookup:`, {
+    logger.error(`[API] [${requestId}] Error processing lookup:`, {
       error: error instanceof Error ? error.message : String(error),
       errorType: error instanceof Error ? error.constructor.name : typeof error,
       stack: error instanceof Error ? error.stack : undefined,

@@ -79,7 +79,8 @@ export default function Home() {
       setResults(data.results || []);
       setProcessedCount(data.results?.length || 0);
     } catch (error) {
-      console.error('[Lookup] Error processing lookup:', error);
+      // Client-side error logging (always logged)
+      console.error('[Lookup] Error processing lookup:', error instanceof Error ? error.message : String(error));
       alert(error instanceof Error ? error.message : 'Failed to process lookup');
     } finally {
       setIsLoading(false);

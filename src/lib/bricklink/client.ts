@@ -1,4 +1,5 @@
 import { OAuth1 } from './oauth';
+import { logger } from '@/lib/utils/logger';
 import type {
   BricklinkConfig,
   BricklinkApiResponse,
@@ -60,7 +61,7 @@ export class BricklinkClient {
 
     // Log request details
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    console.log(`[BrickLink API] [${requestId}] Starting request:`, {
+    logger.debug(`[BrickLink API] [${requestId}] Starting request:`, {
       method,
       endpoint,
       url: urlWithParams,
@@ -78,8 +79,8 @@ export class BricklinkClient {
       queryParams
     );
 
-    // Log OAuth details (without exposing secrets)
-    console.log(`[BrickLink API] [${requestId}] OAuth details:`, {
+    // Log OAuth details (without exposing secrets) - DEBUG level only
+    logger.debug(`[BrickLink API] [${requestId}] OAuth details:`, {
       consumerKey: this.config.consumerKey ? `${this.config.consumerKey.substring(0, 4)}...` : 'MISSING',
       token: this.config.token ? `${this.config.token.substring(0, 4)}...` : 'MISSING',
       authHeaderLength: authHeader.length,
@@ -100,7 +101,7 @@ export class BricklinkClient {
           requestStarted = true;
         }
 
-        console.log(`[BrickLink API] [${requestId}] Attempt ${attempt + 1}/${maxRetries} - Making fetch request...`);
+        logger.debug(`[BrickLink API] [${requestId}] Attempt ${attempt + 1}/${maxRetries} - Making fetch request...`);
 
         const fetchStartTime = Date.now();
         let response: Response;
@@ -115,7 +116,7 @@ export class BricklinkClient {
             body: body ? JSON.stringify(body) : undefined,
           });
         } catch (fetchError) {
-          console.error(`[BrickLink API] [${requestId}] Fetch error (network level):`, {
+          logger.error(`[BrickLink API] [${requestId}] Fetch error (network level):`, {
             error: fetchError instanceof Error ? fetchError.message : String(fetchError),
             errorType: fetchError instanceof Error ? fetchError.constructor.name : typeof fetchError,
             stack: fetchError instanceof Error ? fetchError.stack : undefined,
@@ -124,7 +125,7 @@ export class BricklinkClient {
         }
 
         const fetchDuration = Date.now() - fetchStartTime;
-        console.log(`[BrickLink API] [${requestId}] Response received:`, {
+        logger.debug(`[BrickLink API] [${requestId}] Response received:`, {
           status: response.status,
           statusText: response.statusText,
           ok: response.ok,
@@ -143,15 +144,15 @@ export class BricklinkClient {
         try {
           if (contentType.includes('application/json')) {
             const text = await response.text();
-            console.log(`[BrickLink API] [${requestId}] Response body (raw):`, text.substring(0, 500));
+            logger.debug(`[BrickLink API] [${requestId}] Response body (raw):`, text.substring(0, 500));
             responseBody = text ? JSON.parse(text) : null;
           } else {
             const text = await response.text();
-            console.log(`[BrickLink API] [${requestId}] Response body (non-JSON):`, text.substring(0, 500));
+            logger.debug(`[BrickLink API] [${requestId}] Response body (non-JSON):`, text.substring(0, 500));
             responseBody = { raw: text };
           }
         } catch (parseError) {
-          console.error(`[BrickLink API] [${requestId}] Failed to parse response body:`, {
+          logger.error(`[BrickLink API] [${requestId}] Failed to parse response body:`, {
             error: parseError instanceof Error ? parseError.message : String(parseError),
             contentType,
           });
@@ -159,7 +160,7 @@ export class BricklinkClient {
         }
 
         if (!response.ok) {
-          console.error(`[BrickLink API] [${requestId}] API error response:`, {
+          logger.error(`[BrickLink API] [${requestId}] API error response:`, {
             status: response.status,
             statusText: response.statusText,
             body: responseBody,
@@ -170,7 +171,7 @@ export class BricklinkClient {
           // Handle rate limit errors with backoff
           if (response.status === 429) {
             const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
-            console.warn(`[BrickLink API] [${requestId}] Rate limited (429), retrying after ${retryAfter}s`);
+            logger.warn(`[BrickLink API] [${requestId}] Rate limited (429), retrying after ${retryAfter}s`);
             await this.sleep(retryAfter * 1000);
             requestStarted = false; // Allow new timestamp on retry
             continue;
@@ -179,7 +180,7 @@ export class BricklinkClient {
           // Handle server errors with backoff
           if (response.status >= 500) {
             const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
-            console.warn(`[BrickLink API] [${requestId}] Server error (${response.status}), retrying after ${Math.round(backoff / 1000)}s`);
+            logger.warn(`[BrickLink API] [${requestId}] Server error (${response.status}), retrying after ${Math.round(backoff / 1000)}s`);
             await this.sleep(backoff);
             requestStarted = false; // Allow new timestamp on retry
             continue;
@@ -194,13 +195,13 @@ export class BricklinkClient {
             fullResponse: responseBody,
           };
           
-          console.error(`[BrickLink API] [${requestId}] Client error (no retry):`, errorDetails);
+          logger.error(`[BrickLink API] [${requestId}] Client error (no retry):`, errorDetails);
           throw new Error(
             `BrickLink API error: ${response.status} - ${errorMessage}`
           );
         }
 
-        console.log(`[BrickLink API] [${requestId}] Success! Response data:`, {
+        logger.debug(`[BrickLink API] [${requestId}] Success! Response data:`, {
           hasData: !!responseBody?.data,
           dataType: typeof responseBody?.data,
           dataPreview: responseBody?.data ? JSON.stringify(responseBody.data).substring(0, 200) : 'null',
@@ -218,7 +219,7 @@ export class BricklinkClient {
         
         lastError = error as Error;
         
-        console.error(`[BrickLink API] [${requestId}] Request failed (attempt ${attempt + 1}/${maxRetries}):`, {
+        logger.error(`[BrickLink API] [${requestId}] Request failed (attempt ${attempt + 1}/${maxRetries}):`, {
           error: error instanceof Error ? error.message : String(error),
           errorType: error instanceof Error ? error.constructor.name : typeof error,
           stack: error instanceof Error ? error.stack : undefined,
@@ -227,13 +228,13 @@ export class BricklinkClient {
         // Don't retry on network errors if it's the last attempt
         if (attempt < maxRetries - 1) {
           const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
-          console.warn(`[BrickLink API] [${requestId}] Retrying after ${Math.round(backoff / 1000)}s...`);
+          logger.warn(`[BrickLink API] [${requestId}] Retrying after ${Math.round(backoff / 1000)}s...`);
           await this.sleep(backoff);
         }
       }
     }
 
-    console.error(`[BrickLink API] [${requestId}] All retries exhausted. Final error:`, {
+    logger.error(`[BrickLink API] [${requestId}] All retries exhausted. Final error:`, {
       error: lastError instanceof Error ? lastError.message : String(lastError),
       stack: lastError instanceof Error ? lastError.stack : undefined,
     });
@@ -329,7 +330,7 @@ export class BricklinkClient {
       const waitTime = 60000 - (now - oldestRequest) + 100; // +100ms buffer
       
       if (waitTime > 0) {
-        console.warn(`[BrickLink API] Rate limit reached (${this.requestTimestamps.length}/${this.rateLimit.requestsPerMinute} requests/min), waiting ${Math.round(waitTime / 1000)}s`);
+        logger.warn(`[BrickLink API] Rate limit reached (${this.requestTimestamps.length}/${this.rateLimit.requestsPerMinute} requests/min), waiting ${Math.round(waitTime / 1000)}s`);
         await this.sleep(waitTime);
         // Clean up again after waiting
         const nowAfterWait = Date.now();
@@ -371,7 +372,7 @@ export class BricklinkClient {
       await this.getItem('SET', '10188-1');
       return true;
     } catch (error) {
-      console.error('[BrickLink API] Health check failed:', error instanceof Error ? error.message : 'Unknown error');
+      logger.error('[BrickLink API] Health check failed:', error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
   }
@@ -390,14 +391,18 @@ export function getBricklinkClient(): BricklinkClient {
     const token = process.env.BRICKLINK_TOKEN;
     const tokenSecret = process.env.BRICKLINK_TOKEN_SECRET;
 
-    // Log credential status (without exposing values)
-    console.log('[BrickLink API] Initializing client with credentials:', {
+    // Log credential status (without exposing values) - INFO level for initialization
+    logger.info('[BrickLink API] Initializing client', {
+      hasAllCredentials: !!(consumerKey && consumerSecret && token && tokenSecret),
+      nodeEnv: process.env.NODE_ENV,
+    });
+    
+    // Detailed credential info only at DEBUG level
+    logger.debug('[BrickLink API] Credential details:', {
       consumerKey: consumerKey ? `${consumerKey.substring(0, 4)}...${consumerKey.length} chars` : 'MISSING',
       consumerSecret: consumerSecret ? `${consumerSecret.substring(0, 4)}...${consumerSecret.length} chars` : 'MISSING',
       token: token ? `${token.substring(0, 4)}...${token.length} chars` : 'MISSING',
       tokenSecret: tokenSecret ? `${tokenSecret.substring(0, 4)}...${tokenSecret.length} chars` : 'MISSING',
-      nodeEnv: process.env.NODE_ENV,
-      hasAllCredentials: !!(consumerKey && consumerSecret && token && tokenSecret),
     });
 
     if (!consumerKey || !consumerSecret || !token || !tokenSecret) {
@@ -407,7 +412,7 @@ export function getBricklinkClient(): BricklinkClient {
       if (!token) missing.push('BRICKLINK_TOKEN');
       if (!tokenSecret) missing.push('BRICKLINK_TOKEN_SECRET');
       
-      console.error('[BrickLink API] Missing credentials:', missing);
+      logger.error('[BrickLink API] Missing credentials:', missing);
       throw new Error(
         `BrickLink API credentials are missing. Please set the following environment variables:\n${missing.join('\n')}`
       );
@@ -428,7 +433,7 @@ export function getBricklinkClient(): BricklinkClient {
       concurrentRequests: parseInt(process.env.BRICKLINK_CONCURRENT_REQUESTS || '3', 10),
     };
 
-    console.log('[BrickLink API] Client configuration:', {
+    logger.debug('[BrickLink API] Client configuration:', {
       baseUrl: config.baseUrl || 'https://api.bricklink.com/api/store/v1',
       rateLimit,
     });

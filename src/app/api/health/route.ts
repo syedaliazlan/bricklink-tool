@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getBricklinkClient } from '@/lib/bricklink';
+import { logger } from '@/lib/utils/logger';
 
 /**
  * GET /api/health
@@ -23,15 +24,19 @@ export async function GET() {
         tokenLength: process.env.BRICKLINK_TOKEN?.length || 0,
       },
       serverIP: null as string | null,
+      ipRestrictions: {
+        enabled: !!process.env.ALLOWED_IP_ADDRESSES,
+        allowedIPsCount: process.env.ALLOWED_IP_ADDRESSES?.split(',').filter(ip => ip.trim().length > 0).length || 0,
+      },
     },
   };
 
   // Try to get server's public IP from multiple sources
-  const expectedIP = '149.248.197.193'; // Your Fly.io dedicated IPv4
-  health.diagnostics.expectedIP = expectedIP;
+  const expectedEgressIP = '209.71.85.254'; // Your Fly.io static egress IPv4
+  health.diagnostics.expectedEgressIP = expectedEgressIP;
   
   try {
-    console.log('[Health] Attempting to detect server IP from multiple sources...');
+    logger.debug('[Health] Attempting to detect server IP from multiple sources...');
     
     // Try ipify.org
     try {
@@ -42,11 +47,11 @@ export async function GET() {
         const ipData = await ipResponse.json();
         health.diagnostics.serverIP_ipify = ipData.ip;
         health.diagnostics.serverIP = ipData.ip;
-        health.diagnostics.ipMatches = ipData.ip === expectedIP;
-        console.log('[Health] Server IP detected (ipify):', ipData.ip, 'Expected:', expectedIP, 'Match:', ipData.ip === expectedIP);
+        health.diagnostics.ipMatches = ipData.ip === expectedEgressIP;
+        logger.debug('[Health] Server IP detected (ipify):', ipData.ip, 'Expected:', expectedEgressIP, 'Match:', ipData.ip === expectedEgressIP);
       }
     } catch (error) {
-      console.warn('[Health] ipify.org failed:', error instanceof Error ? error.message : 'Unknown error');
+      logger.debug('[Health] ipify.org failed:', error instanceof Error ? error.message : 'Unknown error');
     }
     
     // Try another service as backup
@@ -61,11 +66,11 @@ export async function GET() {
         if (!health.diagnostics.serverIP) {
           health.diagnostics.serverIP = ip;
         }
-        health.diagnostics.ipMatches = health.diagnostics.ipMatches || (ip === expectedIP);
-        console.log('[Health] Server IP detected (ifconfig.me):', ip);
+        health.diagnostics.ipMatches = health.diagnostics.ipMatches || (ip === expectedEgressIP);
+        logger.debug('[Health] Server IP detected (ifconfig.me):', ip);
       }
     } catch (error) {
-      console.warn('[Health] ifconfig.me failed:', error instanceof Error ? error.message : 'Unknown error');
+      logger.debug('[Health] ifconfig.me failed:', error instanceof Error ? error.message : 'Unknown error');
     }
     
     if (!health.diagnostics.serverIP) {
@@ -73,7 +78,7 @@ export async function GET() {
       health.diagnostics.ipMatches = false;
     }
   } catch (error) {
-    console.warn('[Health] Failed to detect server IP:', error instanceof Error ? error.message : 'Unknown error');
+    logger.warn('[Health] Failed to detect server IP:', error instanceof Error ? error.message : 'Unknown error');
     health.diagnostics.serverIP = 'Unable to detect';
     health.diagnostics.ipMatches = false;
   }
@@ -82,22 +87,22 @@ export async function GET() {
     // Check BrickLink API (optional, may be slow)
     const skipBricklinkCheck = process.env.SKIP_BRICKLINK_HEALTH_CHECK === 'true';
     
-    console.log('[Health] BrickLink check skipped:', skipBricklinkCheck);
+    logger.debug('[Health] BrickLink check skipped:', skipBricklinkCheck);
     
     if (!skipBricklinkCheck) {
-      console.log('[Health] Testing BrickLink API connection...');
+      logger.debug('[Health] Testing BrickLink API connection...');
       const client = getBricklinkClient();
       const startTime = Date.now();
       health.checks.bricklink = await client.healthCheck();
       const duration = Date.now() - startTime;
       health.diagnostics.bricklinkCheckDuration = `${duration}ms`;
-      console.log('[Health] BrickLink API check result:', health.checks.bricklink, `(${duration}ms)`);
+      logger.info('[Health] BrickLink API check:', health.checks.bricklink ? 'OK' : 'FAILED', `(${duration}ms)`);
     } else {
       health.checks.bricklink = true; // Assume OK if skipped
       health.diagnostics.bricklinkCheckSkipped = true;
     }
   } catch (error) {
-    console.error('[Health] BrickLink health check failed:', {
+    logger.error('[Health] BrickLink health check failed:', {
       error: error instanceof Error ? error.message : String(error),
       errorType: error instanceof Error ? error.constructor.name : typeof error,
       stack: error instanceof Error ? error.stack : undefined,

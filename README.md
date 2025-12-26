@@ -73,7 +73,8 @@ BRICKLINK_RATE_LIMIT_PER_MINUTE=60
 BRICKLINK_CONCURRENT_REQUESTS=3
 
 # Access Control (comma-separated IPs or CIDR ranges)
-ALLOWED_IP_ADDRESSES=203.0.113.1,198.51.100.0/24
+# IMPORTANT: Add both IPv4 and IPv6 addresses for each client
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.0/24
 
 # Logging Level (debug, info, warn, error)
 LOG_LEVEL=info
@@ -328,14 +329,29 @@ This Next.js app can be deployed to:
 
 - Restrict API access to specific IP addresses
 - Supports single IPs and CIDR ranges (e.g., `192.168.1.0/24`)
+- **Requires both IPv4 and IPv6 addresses** - clients connecting via IPv6 must have their IPv6 address in the allowed list
 - Configure via `ALLOWED_IP_ADDRESSES` environment variable
 - Health check endpoint is always accessible (with limited info for unauthorized users)
 - Access attempts are logged for security monitoring
+- Formatted error page shown when access is denied (instead of JSON)
+
+**Important:** Modern networks often use IPv6. You must add **both** IPv4 and IPv6 addresses for each client to ensure access works regardless of which protocol their connection uses.
 
 **Example Configuration:**
 ```env
-ALLOWED_IP_ADDRESSES=203.0.113.1,198.51.100.0/24,192.0.2.50
+# Single client with both IPv4 and IPv6
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1
+
+# Multiple clients (each with IPv4 and IPv6)
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.50,2001:db8::2
+
+# With CIDR ranges
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.0/24
 ```
+
+**How to Get Client IPs:**
+1. **IPv4**: `curl https://api.ipify.org?format=json`
+2. **IPv6**: Access the app - the error page will show your IPv6 address, or use: `curl -6 https://api64.ipify.org?format=json`
 
 ### Configurable Logging
 
@@ -405,13 +421,19 @@ ALLOWED_IP_ADDRESSES=203.0.113.1,198.51.100.0/24,192.0.2.50
 
 ### Access Denied (403 Forbidden)
 
-- **Symptom**: "Access Denied: IP address not authorized"
-- **Cause**: Your IP is not in the `ALLOWED_IP_ADDRESSES` list
+- **Symptom**: "Access Denied: IP address not authorized" (formatted HTML error page)
+- **Cause**: Your IP is not in the `ALLOWED_IP_ADDRESSES` list, or you're missing IPv6 address
 - **Solution**:
-  1. Check your current IP: `curl https://api.ipify.org?format=json`
-  2. Add your IP to `ALLOWED_IP_ADDRESSES` environment variable
-  3. Restart the application: `flyctl apps restart bricklink-tool`
-  4. For development, you can temporarily remove IP restrictions
+  1. **Get your IPv4**: `curl https://api.ipify.org?format=json`
+  2. **Get your IPv6**: The error page will show it, or use: `curl -6 https://api64.ipify.org?format=json`
+  3. **Add both IPs** to `ALLOWED_IP_ADDRESSES`:
+     ```bash
+     flyctl secrets set ALLOWED_IP_ADDRESSES="YOUR_IPv4,YOUR_IPv6" -a bricklink-tool
+     ```
+  4. The app will automatically detect and use the correct IP based on your connection
+  5. For development, you can temporarily remove IP restrictions by unsetting the variable
+
+**Common Issue:** If you only added your IPv4 but your connection uses IPv6, you'll be denied access. Always add both addresses.
 
 ### File parsing errors
 

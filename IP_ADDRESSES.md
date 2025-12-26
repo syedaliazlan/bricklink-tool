@@ -28,21 +28,33 @@ This document lists all IP addresses that need to be configured for the BrickLin
 **Purpose**: Restricts API access to specific IP addresses  
 **Example Values**:
 ```
-ALLOWED_IP_ADDRESSES=203.0.113.1,198.51.100.0/24,192.0.2.50
+# Single client with both IPv4 and IPv6 (REQUIRED)
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1
+
+# Multiple clients (each with IPv4 and IPv6)
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.50,2001:db8::2
+
+# With CIDR ranges
+ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.0/24
 ```
 
 **Where to Set**:
-- **Fly.io**: `flyctl secrets set ALLOWED_IP_ADDRESSES="203.0.113.1,198.51.100.0/24" -a bricklink-tool`
+- **Fly.io**: `flyctl secrets set ALLOWED_IP_ADDRESSES="203.0.113.1,2001:db8::1" -a bricklink-tool`
 - **Local Development**: Add to `.env` file
 
 **Supported Formats**:
-- Single IP: `203.0.113.1`
-- CIDR Range: `198.51.100.0/24` (allows all IPs from 198.51.100.0 to 198.51.100.255)
+- Single IPv4: `203.0.113.1`
+- Single IPv6: `2001:db8::1`
+- CIDR Range (IPv4): `198.51.100.0/24` (allows all IPs from 198.51.100.0 to 198.51.100.255)
+- CIDR Range (IPv6): `2001:db8::/64`
 
 **Important**: 
+- **You must add both IPv4 and IPv6 addresses** for each client
+- Modern networks often use IPv6, so clients connecting via IPv6 must have their IPv6 address in the list
 - If not set, all IPs are allowed (useful for development)
 - The health check endpoint (`/api/health`) is always accessible, but detailed diagnostics are only shown to allowed IPs
-- Use CIDR notation for IP ranges (e.g., `/24` for a subnet)
+- Use CIDR notation for IP ranges (e.g., `/24` for IPv4 subnet, `/64` for IPv6 subnet)
+- Access denied errors show a formatted HTML page with detected IPs and instructions
 
 ## IP Address Summary Table
 
@@ -87,7 +99,14 @@ If `ipMatches: false` in the health check:
 
 ### Access Denied
 If you get "Access Denied" errors:
-1. Check your current IP: `curl https://api.ipify.org?format=json`
-2. Add your IP to `ALLOWED_IP_ADDRESSES`
-3. Restart the Fly.io app: `flyctl apps restart bricklink-tool`
+1. **Get your IPv4**: `curl https://api.ipify.org?format=json`
+2. **Get your IPv6**: The error page will show it, or use: `curl -6 https://api64.ipify.org?format=json`
+3. **Add both IPs** to `ALLOWED_IP_ADDRESSES`:
+   ```bash
+   flyctl secrets set ALLOWED_IP_ADDRESSES="YOUR_IPv4,YOUR_IPv6" -a bricklink-tool
+   ```
+4. The formatted error page will show your detected IPs and provide instructions
+5. Restart the Fly.io app: `flyctl apps restart bricklink-tool` (usually not needed, secrets update immediately)
+
+**Common Issue:** If you only added your IPv4 but your connection uses IPv6, you'll be denied access. Always add both addresses.
 

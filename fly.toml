@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for bricklink-bulk-pricing-tool on 2025-12-25T08:32:42Z
+# fly.toml app configuration file generated for bricklink-tool on 2025-12-26T01:30:01Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -21,13 +21,3 @@ primary_region = 'lhr'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024
-
-# Required environment variables (set via: fly secrets set KEY=value)
-# BRICKLINK_CONSUMER_KEY=your_consumer_key
-# BRICKLINK_CONSUMER_SECRET=your_consumer_secret
-# BRICKLINK_TOKEN=your_token
-# BRICKLINK_TOKEN_SECRET=your_token_secret
-#
-# Optional environment variables:
-# BRICKLINK_RATE_LIMIT_PER_MINUTE=60 (default: 60)
-# BRICKLINK_CONCURRENT_REQUESTS=3 (default: 3)

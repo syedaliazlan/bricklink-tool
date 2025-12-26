@@ -78,29 +78,6 @@ export async function GET(request: NextRequest) {
       },
     };
   }
-  const health: any = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    checks: {
-      bricklink: false,
-    },
-    diagnostics: {
-      environment: process.env.NODE_ENV,
-      credentials: {
-        hasConsumerKey: !!process.env.BRICKLINK_CONSUMER_KEY,
-        hasConsumerSecret: !!process.env.BRICKLINK_CONSUMER_SECRET,
-        hasToken: !!process.env.BRICKLINK_TOKEN,
-        hasTokenSecret: !!process.env.BRICKLINK_TOKEN_SECRET,
-        consumerKeyLength: process.env.BRICKLINK_CONSUMER_KEY?.length || 0,
-        tokenLength: process.env.BRICKLINK_TOKEN?.length || 0,
-      },
-      serverIP: null as string | null,
-      ipRestrictions: {
-        enabled: !!process.env.ALLOWED_IP_ADDRESSES,
-        allowedIPsCount: process.env.ALLOWED_IP_ADDRESSES?.split(',').filter(ip => ip.trim().length > 0).length || 0,
-      },
-    },
-  };
 
   // Only run detailed diagnostics for authorized requests
   if (isAuthorizedRequest) {

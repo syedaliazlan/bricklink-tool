@@ -36,7 +36,7 @@ export function ProgressIndicator({ progress, total, status }: ProgressIndicator
         {/* Info */}
         <div className="mt-6 text-sm text-gray-500">
           <p>This may take a few minutes depending on the number of sets.</p>
-          <p>Please don't close this window.</p>
+          <p>Please don&apos;t close this window.</p>
         </div>
       </div>
     </div>

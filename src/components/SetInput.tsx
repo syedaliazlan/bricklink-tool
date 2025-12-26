@@ -212,9 +212,9 @@ export function SetInput({ onLookupStart }: SetInputProps) {
             <p className="text-sm font-medium text-blue-900 mb-2">File Format Requirements:</p>
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
               <li>Supports CSV (.csv) and Excel (.xlsx, .xls) files</li>
-              <li>First row should contain headers (e.g., "Set", "Set Number", "Set ID", "Condition")</li>
+              <li>First row should contain headers (e.g., &quot;Set&quot;, &quot;Set Number&quot;, &quot;Set ID&quot;, &quot;Condition&quot;)</li>
               <li>Set numbers can be numeric (e.g., 75158) or full format (e.g., 10188-1)</li>
-              <li>Condition values: "new", "used", "New", "Used", "N", or "U"</li>
+              <li>Condition values: &quot;new&quot;, &quot;used&quot;, &quot;New&quot;, &quot;Used&quot;, &quot;N&quot;, or &quot;U&quot;</li>
               <li>Maximum 600 sets per file</li>
             </ul>
             <div className="mt-3 p-2 bg-white rounded border border-blue-200">

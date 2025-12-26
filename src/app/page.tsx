@@ -49,7 +49,7 @@ export default function Home() {
         clearInterval(progressIntervalRef.current);
       }
     };
-  }, [isLoading, totalSets]);
+  }, [isLoading, totalSets, processedCount]);
 
   const handleLookupStart = async (sets: Array<{ setNumber: string; condition: 'new' | 'used' }>, forceRefresh: boolean = false) => {
     setIsLoading(true);

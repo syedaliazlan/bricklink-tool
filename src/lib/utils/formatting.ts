@@ -25,6 +25,16 @@ export function formatCurrency(value: string | number | null | undefined, curren
 }
 
 /**
+ * Format set number by removing the "-1" suffix if present
+ * Example: "10188-1" -> "10188", "75158" -> "75158"
+ */
+export function formatSetNumber(setNumber: string): string {
+  if (!setNumber) return setNumber;
+  // Remove "-1" suffix if present
+  return setNumber.replace(/-1$/, '');
+}
+
+/**
  * Format number with commas
  */
 export function formatNumber(value: number | null | undefined): string {

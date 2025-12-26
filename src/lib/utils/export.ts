@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import type { SetPriceResult } from '@/types';
+import { formatSetNumber } from './formatting';
 
 /**
  * Export utilities for CSV/Excel
@@ -22,7 +23,7 @@ export interface ExportRow {
  */
 export function exportToCSV(results: SetPriceResult[], filename: string = 'bricklink-prices.csv'): void {
   const rows: ExportRow[] = results.map(result => ({
-    'Set Number': result.setNumber,
+    'Set Number': formatSetNumber(result.setNumber),
     'Set Name': result.setName || '',
     'Condition': result.condition === 'new' ? 'New' : 'Used',
     'Times Sold': result.timesSold !== null && result.timesSold !== undefined ? result.timesSold.toString() : '',

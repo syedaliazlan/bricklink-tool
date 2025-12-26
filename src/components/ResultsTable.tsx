@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { Download, AlertCircle, CheckCircle, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
-import { formatCurrency, formatNumber } from '@/lib/utils/formatting';
+import { formatCurrency, formatNumber, formatSetNumber } from '@/lib/utils/formatting';
 import { exportToCSV } from '@/lib/utils/export';
 import type { SetPriceResult } from '@/types';
 
@@ -303,7 +303,7 @@ export function ResultsTable({ results, currency }: ResultsTableProps) {
                   }`}
                 >
                   <td className="px-4 py-3.5 font-mono text-xs font-semibold text-gray-900">
-                    {result.setNumber}
+                    {formatSetNumber(result.setNumber)}
                   </td>
                   <td className="px-4 py-3.5 max-w-xs truncate text-gray-900 font-medium" title={result.setName}>
                     {result.setName || '-'}

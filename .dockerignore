@@ -1,26 +1,48 @@
+# Docker files
 Dockerfile
 .dockerignore
+
+# Dependencies (will be installed fresh in container)
 node_modules
-npm-debug.log
-README.md
+
+# Environment files (secrets should be set in Fly.io)
 .env
 .env.local
 .env*.local
+
+# Build outputs
 .vercel
 .next
+
+# Git
 .git
 .gitignore
-*.md
+
+# IDE
 .vscode
 .idea
+
+# Documentation (except for build)
+*.md
+
+# Test/sample data files
 *.xlsx
 *.xls
 *.csv
-*.json
-*.yaml
-*.yml
-*.txt
+
+# Logs
+npm-debug.log
 *.log
 *.error
 *.warn
 *.info
+
+# Config files we DON'T need in Docker
+*.yaml
+*.yml
+
+# IMPORTANT: Do NOT exclude these (needed for build)
+# package.json
+# package-lock.json
+# tsconfig.json
+# next.config.js

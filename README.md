@@ -73,8 +73,8 @@ BRICKLINK_RATE_LIMIT_PER_MINUTE=60
 BRICKLINK_CONCURRENT_REQUESTS=3
 
 # Access Control (comma-separated IPs or CIDR ranges)
-# IMPORTANT: Add both IPv4 and IPv6 addresses for each client
-ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.0/24
+# Use IPv6 prefix with /64 to handle rotating IPv6 suffixes
+ALLOWED_IP_ADDRESSES=203.0.113.1,2a00:23c8:c723:3d01::/64
 
 # Logging Level (debug, info, warn, error)
 LOG_LEVEL=info
@@ -259,7 +259,7 @@ This app is configured for Fly.io deployment with Docker support.
    flyctl secrets set BRICKLINK_CONSUMER_SECRET=your_secret -a bricklink-tool
    flyctl secrets set BRICKLINK_TOKEN=your_token -a bricklink-tool
    flyctl secrets set BRICKLINK_TOKEN_SECRET=your_token_secret -a bricklink-tool
-   flyctl secrets set ALLOWED_IP_ADDRESSES="203.0.113.1,198.51.100.0/24" -a bricklink-tool
+   flyctl secrets set ALLOWED_IP_ADDRESSES="203.0.113.1,2a00:23c8:c723:3d01::/64" -a bricklink-tool
    flyctl secrets set LOG_LEVEL=info -a bricklink-tool
    ```
 
@@ -328,30 +328,50 @@ This Next.js app can be deployed to:
 ### IP-Based Access Control
 
 - Restrict API access to specific IP addresses
-- Supports single IPs and CIDR ranges (e.g., `192.168.1.0/24`)
-- **Requires both IPv4 and IPv6 addresses** - clients connecting via IPv6 must have their IPv6 address in the allowed list
+- Supports single IPs and CIDR ranges for both IPv4 and IPv6
+- **IPv6 CIDR Support**: Use `/64` prefix notation for IPv6 addresses (e.g., `2a00:23c8:c723:3d01::/64`)
 - Configure via `ALLOWED_IP_ADDRESSES` environment variable
 - Health check endpoint is always accessible (with limited info for unauthorized users)
 - Access attempts are logged for security monitoring
-- Formatted error page shown when access is denied (instead of JSON)
+- Formatted error page with copy-ready IP information shown when access is denied
 
-**Important:** Modern networks often use IPv6. You must add **both** IPv4 and IPv6 addresses for each client to ensure access works regardless of which protocol their connection uses.
+**Why IPv6 CIDR?** IPv6 addresses have a "privacy extension" feature that rotates the suffix portion periodically (typically every 24 hours) for privacy. The network prefix (first 64 bits) stays constant. Using `/64` CIDR notation allows all addresses from a client's network.
 
 **Example Configuration:**
 ```env
-# Single client with both IPv4 and IPv6
-ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1
+# Single client with IPv4 and IPv6 prefix (recommended)
+ALLOWED_IP_ADDRESSES=203.0.113.1,2a00:23c8:c723:3d01::/64
 
-# Multiple clients (each with IPv4 and IPv6)
-ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.50,2001:db8::2
+# Multiple clients
+ALLOWED_IP_ADDRESSES=203.0.113.1,2a00:23c8:c723:3d01::/64,198.51.100.50,2001:db8:85a3::/64
 
-# With CIDR ranges
-ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.0/24
+# With IPv4 CIDR ranges
+ALLOWED_IP_ADDRESSES=203.0.113.1,2a00:23c8:c723::/48,198.51.100.0/24
 ```
 
-**How to Get Client IPs:**
-1. **IPv4**: `curl https://api.ipify.org?format=json`
-2. **IPv6**: Access the app - the error page will show your IPv6 address, or use: `curl -6 https://api64.ipify.org?format=json`
+**How to Get Client IPs (for your customers):**
+
+When clients try to access the app without authorization, they'll see a friendly "Access Denied" page that shows:
+1. Their IPv6 prefix (already formatted with `/64` - ready to copy)
+2. Their IPv4 address (if detected) or a link to find it
+
+They simply copy this information and send it to you. Then you add it to `ALLOWED_IP_ADDRESSES`.
+
+**Example workflow:**
+1. Client visits the app → sees Access Denied page
+2. Client copies the displayed info:
+   ```
+   IPv4: 86.162.88.184
+   IPv6 Prefix: 2a00:23c8:c723:3d01::/64
+   ```
+3. You add both to the secrets:
+   ```bash
+   flyctl secrets set ALLOWED_IP_ADDRESSES="86.162.88.184,2a00:23c8:c723:3d01::/64" -a bricklink-tool
+   ```
+
+**Manual IP lookup (alternative):**
+- **IPv4**: `curl https://api.ipify.org`
+- **IPv6**: `curl -6 https://api64.ipify.org` (then take first 4 groups + `::/64`)
 
 ### Configurable Logging
 
@@ -422,18 +442,23 @@ ALLOWED_IP_ADDRESSES=203.0.113.1,2001:db8::1,198.51.100.0/24
 ### Access Denied (403 Forbidden)
 
 - **Symptom**: "Access Denied: IP address not authorized" (formatted HTML error page)
-- **Cause**: Your IP is not in the `ALLOWED_IP_ADDRESSES` list, or you're missing IPv6 address
+- **Cause**: Your IP is not in the `ALLOWED_IP_ADDRESSES` list
 - **Solution**:
-  1. **Get your IPv4**: `curl https://api.ipify.org?format=json`
-  2. **Get your IPv6**: The error page will show it, or use: `curl -6 https://api64.ipify.org?format=json`
-  3. **Add both IPs** to `ALLOWED_IP_ADDRESSES`:
+  1. Visit the app - the Access Denied page will show your:
+     - **IPv4 address** (or a link to find it)
+     - **IPv6 prefix** (already formatted with `/64`)
+  2. Copy the displayed information and add to `ALLOWED_IP_ADDRESSES`:
      ```bash
-     flyctl secrets set ALLOWED_IP_ADDRESSES="YOUR_IPv4,YOUR_IPv6" -a bricklink-tool
+     flyctl secrets set ALLOWED_IP_ADDRESSES="YOUR_IPv4,YOUR_IPv6_PREFIX" -a bricklink-tool
      ```
-  4. The app will automatically detect and use the correct IP based on your connection
-  5. For development, you can temporarily remove IP restrictions by unsetting the variable
+     Example:
+     ```bash
+     flyctl secrets set ALLOWED_IP_ADDRESSES="86.162.88.184,2a00:23c8:c723:3d01::/64" -a bricklink-tool
+     ```
+  3. The IPv6 prefix (`/64`) covers all rotating IPv6 suffixes from your network
+  4. For development, you can temporarily remove IP restrictions by unsetting the variable
 
-**Common Issue:** If you only added your IPv4 but your connection uses IPv6, you'll be denied access. Always add both addresses.
+**Why IPv6 prefix with /64?** IPv6 addresses have a privacy feature that changes the suffix portion periodically. Using the `/64` prefix ensures access works even when the suffix changes.
 
 ### File parsing errors
 

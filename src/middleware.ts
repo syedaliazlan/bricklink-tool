@@ -12,7 +12,141 @@ function isIPv4(ip: string): boolean {
  * Check if an IP address is IPv6
  */
 function isIPv6(ip: string): boolean {
-  return ip.includes(':');
+  return ip.includes(':') && !ip.includes('.');
+}
+
+/**
+ * Extract IPv6 prefix for /64 CIDR notation
+ * Takes the first 4 groups of the IPv6 address
+ */
+function getIPv6Prefix(ipv6: string): string {
+  try {
+    // Handle :: expansion first
+    const expanded = expandIPv6(ipv6);
+    if (!expanded) return '';
+    
+    // Take first 4 groups (64 bits) and format as CIDR
+    const prefix = expanded.slice(0, 4).join(':');
+    return `${prefix}::/64`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Expand IPv6 address to full 8-group format
+ */
+function expandIPv6(ip: string): string[] | null {
+  try {
+    // Remove any zone identifier (e.g., %eth0)
+    const cleanIP = ip.split('%')[0];
+    
+    let groups: string[];
+    
+    if (cleanIP.includes('::')) {
+      const parts = cleanIP.split('::');
+      const left = parts[0] ? parts[0].split(':') : [];
+      const right = parts[1] ? parts[1].split(':') : [];
+      const missingGroups = 8 - left.length - right.length;
+      
+      groups = [
+        ...left,
+        ...Array(missingGroups).fill('0'),
+        ...right,
+      ];
+    } else {
+      groups = cleanIP.split(':');
+    }
+    
+    if (groups.length !== 8) {
+      return null;
+    }
+    
+    // Normalize each group to lowercase (don't pad, keep original for comparison)
+    return groups.map(g => g.toLowerCase());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if IPv6 is within a CIDR range
+ */
+function isIPv6InCIDR(ip: string, network: string, prefixLength: number): boolean {
+  try {
+    const ipGroups = expandIPv6(ip);
+    const networkGroups = expandIPv6(network);
+    
+    if (!ipGroups || !networkGroups) {
+      return false;
+    }
+    
+    // Convert each group to 16-bit binary and concatenate
+    const ipBinary = ipGroups
+      .map(g => parseInt(g, 16).toString(2).padStart(16, '0'))
+      .join('');
+    const networkBinary = networkGroups
+      .map(g => parseInt(g, 16).toString(2).padStart(16, '0'))
+      .join('');
+    
+    // Compare the first prefixLength bits
+    return ipBinary.substring(0, prefixLength) === networkBinary.substring(0, prefixLength);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if IPv4 is within a CIDR range
+ */
+function isIPv4InCIDR(ip: string, network: string, prefixLength: number): boolean {
+  try {
+    const ipParts = ip.split('.').map(Number);
+    const networkParts = network.split('.').map(Number);
+    
+    if (ipParts.length !== 4 || networkParts.length !== 4) {
+      return false;
+    }
+
+    // Convert to 32-bit integers
+    const ipNum = (ipParts[0] << 24) + (ipParts[1] << 16) + (ipParts[2] << 8) + ipParts[3];
+    const networkNum = (networkParts[0] << 24) + (networkParts[1] << 16) + (networkParts[2] << 8) + networkParts[3];
+    const mask = (0xffffffff << (32 - prefixLength)) >>> 0;
+
+    return (ipNum & mask) === (networkNum & mask);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if IP is within a CIDR range (supports both IPv4 and IPv6)
+ */
+function isIPInCIDR(ip: string, cidr: string): boolean {
+  try {
+    const [network, prefixLengthStr] = cidr.split('/');
+    const prefixLength = parseInt(prefixLengthStr, 10);
+    
+    if (isNaN(prefixLength)) {
+      return false;
+    }
+    
+    // Check if both IP and CIDR are the same type
+    const ipIsV6 = isIPv6(ip);
+    const cidrIsV6 = isIPv6(network);
+    
+    if (ipIsV6 !== cidrIsV6) {
+      return false; // Can't compare IPv4 with IPv6
+    }
+    
+    if (ipIsV6) {
+      return isIPv6InCIDR(ip, network, prefixLength);
+    } else {
+      return isIPv4InCIDR(ip, network, prefixLength);
+    }
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -70,7 +204,7 @@ function getAllIPs(request: NextRequest): { primary: string | null; allIPs: stri
  * Prefers IPv4 if available, otherwise returns primary IP
  */
 function getClientIP(request: NextRequest): string | null {
-  const { primary, allIPs, ipv4s } = getAllIPs(request);
+  const { primary, ipv4s } = getAllIPs(request);
   
   // Prefer IPv4 if available
   if (ipv4s.length > 0) {
@@ -96,7 +230,7 @@ function getClientIP(request: NextRequest): string | null {
 
 /**
  * Check if IP is in the allowed list
- * Supports both exact IPs and CIDR notation (e.g., 192.168.1.0/24)
+ * Supports both exact IPs and CIDR notation (e.g., 192.168.1.0/24 or 2a00:23c8::/32)
  */
 function isIPAllowed(clientIP: string, allowedIPs: string[]): boolean {
   if (allowedIPs.length === 0) {
@@ -110,7 +244,7 @@ function isIPAllowed(clientIP: string, allowedIPs: string[]): boolean {
       return true;
     }
 
-    // CIDR notation support (e.g., 192.168.1.0/24)
+    // CIDR notation support (e.g., 192.168.1.0/24 or 2a00:23c8::/64)
     if (allowed.includes('/')) {
       if (isIPInCIDR(clientIP, allowed)) {
         return true;
@@ -122,109 +256,27 @@ function isIPAllowed(clientIP: string, allowedIPs: string[]): boolean {
 }
 
 /**
- * Check if IP is within a CIDR range
+ * Escape HTML special characters
  */
-function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefixLength] = cidr.split('/');
-    const prefix = parseInt(prefixLength, 10);
-    
-    const ipParts = ip.split('.').map(Number);
-    const networkParts = network.split('.').map(Number);
-    
-    if (ipParts.length !== 4 || networkParts.length !== 4) {
-      return false;
-    }
-
-    // Convert to 32-bit integers
-    const ipNum = (ipParts[0] << 24) + (ipParts[1] << 16) + (ipParts[2] << 8) + ipParts[3];
-    const networkNum = (networkParts[0] << 24) + (networkParts[1] << 16) + (networkParts[2] << 8) + networkParts[3];
-    const mask = (0xffffffff << (32 - prefix)) >>> 0;
-
-    return (ipNum & mask) === (networkNum & mask);
-  } catch {
-    return false;
-  }
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-export function middleware(request: NextRequest) {
-  // Get allowed IPs from environment variable (comma-separated)
-  const allowedIPsEnv = process.env.ALLOWED_IP_ADDRESSES || '';
-  const allowedIPs = allowedIPsEnv
-    .split(',')
-    .map(ip => ip.trim())
-    .filter(ip => ip.length > 0);
-
-  // If no IPs configured, allow all (useful for development)
-  if (allowedIPs.length === 0) {
-    logger.debug('[Middleware] No IP restrictions configured, allowing all');
-    return NextResponse.next();
-  }
-
-  // Get client IP
-  const clientIP = getClientIP(request);
-  
-  if (!clientIP) {
-    logger.warn('[Middleware] Could not determine client IP, blocking request');
-    return NextResponse.json(
-      { error: 'Access denied: Could not verify IP address' },
-      { status: 403 }
-    );
-  }
-
-  // Get all IPs from headers (including IPv4 if available)
-  const { allIPs, ipv4s } = getAllIPs(request);
-  
-  // Check if the primary IP is allowed
-  let isAllowed = isIPAllowed(clientIP, allowedIPs);
-  
-  // If primary IP is IPv6 but not allowed, check if any IPv4 in headers matches
-  // This helps when proxies include both IPv4 and IPv6 in headers
-  if (!isAllowed && isIPv6(clientIP) && ipv4s.length > 0) {
-    logger.debug(`[Middleware] Primary IP ${clientIP} (IPv6) not allowed, checking IPv4 addresses in headers: ${ipv4s.join(', ')}`);
-    for (const ipv4 of ipv4s) {
-      if (isIPAllowed(ipv4, allowedIPs)) {
-        logger.info(`[Middleware] Allowing access via IPv4 ${ipv4} found in headers (connection uses IPv6 ${clientIP})`);
-        isAllowed = true;
-        break;
-      }
-    }
-  }
-
-  if (!isAllowed) {
-    const ipType = isIPv6(clientIP) ? 'IPv6' : 'IPv4';
-    const hasIPv4 = allowedIPs.some(ip => isIPv4(ip) && !ip.includes('/'));
-    const hasIPv6 = allowedIPs.some(ip => isIPv6(ip));
-    
-    logger.warn(`[Middleware] Access denied for IP: ${clientIP}`, {
-      allowedIPs,
-      path: request.nextUrl.pathname,
-      clientIP,
-      allDetectedIPs: allIPs,
-      detectedIPv4s: ipv4s,
-      ipType,
-      hasIPv4InList: hasIPv4,
-      hasIPv6InList: hasIPv6,
-    });
-    
-    let hint = 'Check that your IP matches exactly (including IPv4 vs IPv6)';
-    let solution = `Add this ${ipType} address to ALLOWED_IP_ADDRESSES: ${clientIP}`;
-    
-    if (ipType === 'IPv6' && hasIPv4 && !hasIPv6) {
-      if (ipv4s.length > 0) {
-        hint = `Your connection uses IPv6, but we found IPv4 addresses in headers: ${ipv4s.join(', ')}. However, none match your allowed IPv4 addresses.`;
-        solution = `Add one of these IPv4 addresses to ALLOWED_IP_ADDRESSES: ${ipv4s.join(' or ')}`;
-      } else {
-        hint = `Your connection is using IPv6 (${clientIP}), but only IPv4 addresses are in the allowed list. You need to add both your IPv4 and IPv6 addresses.`;
-        solution = `Add both IPs to ALLOWED_IP_ADDRESSES: your IPv4 address and this IPv6: ${clientIP}`;
-      }
-    } else if (ipType === 'IPv4' && hasIPv6 && !hasIPv4) {
-      hint = `Your connection is using IPv4 (${clientIP}), but only IPv6 addresses are in the allowed list. You need to add both your IPv4 and IPv6 addresses.`;
-      solution = `Add both IPs to ALLOWED_IP_ADDRESSES: this IPv4 (${clientIP}) and your IPv6 address`;
-    }
-    
-    // Return a nicely formatted HTML error page
-    const html = `
+/**
+ * Generate the Access Denied HTML page
+ */
+function generateAccessDeniedPage(
+  clientIP: string,
+  ipType: 'IPv4' | 'IPv6',
+  ipv4s: string[],
+  ipv6Prefix: string
+): string {
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -246,7 +298,7 @@ export function middleware(request: NextRequest) {
             background: white;
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 600px;
+            max-width: 650px;
             width: 100%;
             padding: 40px;
         }
@@ -277,7 +329,7 @@ export function middleware(request: NextRequest) {
             background: #f9fafb;
             border-left: 4px solid #3b82f6;
             padding: 16px;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             border-radius: 4px;
         }
         .info-box.error {
@@ -298,14 +350,6 @@ export function middleware(request: NextRequest) {
             line-height: 1.6;
             margin-bottom: 4px;
         }
-        .info-box code {
-            background: #e5e7eb;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 13px;
-            color: #1f2937;
-        }
         .ip-display {
             background: #1f2937;
             color: #10b981;
@@ -320,36 +364,87 @@ export function middleware(request: NextRequest) {
         .solution-box {
             background: #ecfdf5;
             border: 1px solid #10b981;
-            border-radius: 6px;
-            padding: 20px;
+            border-radius: 8px;
+            padding: 24px;
             margin-top: 24px;
         }
         .solution-box h3 {
             color: #059669;
-            font-size: 16px;
-            margin-bottom: 12px;
+            font-size: 18px;
+            margin-bottom: 16px;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .solution-box code {
+        .solution-item {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #d1fae5;
+        }
+        .solution-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .solution-item h4 {
+            color: #047857;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .solution-item p {
+            color: #065f46;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .solution-item code {
             background: #1f2937;
             color: #10b981;
-            padding: 12px;
+            padding: 10px 14px;
             border-radius: 6px;
             display: block;
-            margin-top: 12px;
             font-size: 13px;
+            word-break: break-all;
+            margin-top: 8px;
+        }
+        .copy-text {
+            background: #f0fdf4;
+            border: 2px dashed #10b981;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 20px;
+        }
+        .copy-text h4 {
+            color: #047857;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        .copy-text pre {
+            background: #1f2937;
+            color: #fbbf24;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            white-space: pre-wrap;
             word-break: break-all;
         }
         .note {
             background: #fef3c7;
             border-left: 4px solid #f59e0b;
-            padding: 12px;
+            padding: 12px 16px;
             margin-top: 20px;
             border-radius: 4px;
             font-size: 14px;
             color: #92400e;
+        }
+        .note a {
+            color: #d97706;
+            font-weight: 600;
+        }
+        .divider {
+            height: 1px;
+            background: #e5e7eb;
+            margin: 24px 0;
         }
     </style>
 </head>
@@ -360,49 +455,131 @@ export function middleware(request: NextRequest) {
         <p class="subtitle">Your IP address is not authorized to access this application</p>
         
         <div class="info-box error">
-            <h3>Detected Connection</h3>
+            <h3>Your Detected Connection</h3>
             <p>Your connection is using <strong>${ipType}</strong></p>
-            <div class="ip-display">${clientIP.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-            ${ipv4s.length > 0 ? `<p style="margin-top: 12px;">Also detected IPv4 addresses in headers:</p><div class="ip-display" style="margin-top: 8px;">${ipv4s.map(ip => ip.replace(/</g, '&lt;').replace(/>/g, '&gt;')).join('<br>')}</div>` : ''}
-        </div>
-
-        <div class="info-box">
-            <h3>Issue</h3>
-            <p>${hint.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+            <div class="ip-display">${escapeHtml(clientIP)}</div>
         </div>
 
         <div class="solution-box">
-            <h3>✅ Solution</h3>
-            <p>${solution.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
-            ${ipType === 'IPv6' && !hasIPv6 ? `
-            <div class="note">
-                <strong>Important:</strong> You need to add <strong>both</strong> your IPv4 and IPv6 addresses to the allowed list. 
-                Contact the administrator with both IPs to get access.
+            <h3>✅ Request Access - Send These Details</h3>
+            
+            <p style="color: #065f46; margin-bottom: 20px;">
+                Please send the following information to your administrator to get access:
+            </p>
+
+            ${ipType === 'IPv6' ? `
+            <div class="solution-item">
+                <h4>1. Your IPv6 Network Prefix</h4>
+                <p>This covers all your IPv6 addresses (the suffix changes, but prefix stays constant):</p>
+                <code>${escapeHtml(ipv6Prefix)}</code>
             </div>
-            ` : ''}
+
+            <div class="solution-item">
+                <h4>2. Your IPv4 Address</h4>
+                ${ipv4s.length > 0 ? `
+                <p>We detected this IPv4 in your connection:</p>
+                <code>${escapeHtml(ipv4s[0])}</code>
+                ` : `
+                <p>We couldn't detect your IPv4 address. Please visit this link to find it:</p>
+                <p><a href="https://api.ipify.org" target="_blank" style="color: #059669; font-weight: 600;">https://api.ipify.org</a></p>
+                <p style="margin-top: 8px; color: #6b7280; font-size: 13px;">Copy the IP address shown on that page.</p>
+                `}
+            </div>
+
+            <div class="copy-text">
+                <h4>📋 Copy & Send This to Administrator:</h4>
+                <pre>IPv4: ${ipv4s.length > 0 ? escapeHtml(ipv4s[0]) : '[Visit https://api.ipify.org to get your IPv4]'}
+IPv6 Prefix: ${escapeHtml(ipv6Prefix)}</pre>
+            </div>
+            ` : `
+            <div class="solution-item">
+                <h4>Your IPv4 Address</h4>
+                <p>Send this to your administrator:</p>
+                <code>${escapeHtml(clientIP)}</code>
+            </div>
+
+            <div class="copy-text">
+                <h4>📋 Copy & Send This to Administrator:</h4>
+                <pre>IPv4: ${escapeHtml(clientIP)}</pre>
+            </div>
+            `}
         </div>
 
-        <div class="note" style="margin-top: 24px;">
-            <strong>Need help?</strong> Contact the application administrator and provide them with your detected IP address(es) above.
+        <div class="note">
+            <strong>Why both IPv4 and IPv6?</strong> Your internet connection may use either protocol depending on your network. 
+            Providing both ensures uninterrupted access.
         </div>
     </div>
 </body>
 </html>
-    `;
+  `;
+}
 
-    return new NextResponse(html, {
-      status: 403,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-      },
+export function middleware(request: NextRequest) {
+  // Get allowed IPs from environment variable (comma-separated)
+  const allowedIPsEnv = process.env.ALLOWED_IP_ADDRESSES || '';
+  const allowedIPs = allowedIPsEnv
+    .split(',')
+    .map(ip => ip.trim())
+    .filter(ip => ip.length > 0);
+
+  // If no IPs configured, allow all (useful for development)
+  if (allowedIPs.length === 0) {
+    logger.debug('[Middleware] No IP restrictions configured, allowing all');
+    return NextResponse.next();
+  }
+
+  // Get client IP
+  const clientIP = getClientIP(request);
+  
+  if (!clientIP) {
+    logger.warn('[Middleware] Could not determine client IP, blocking request');
+    return new NextResponse(
+      generateAccessDeniedPage('Unknown', 'IPv4', [], ''),
+      { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    );
+  }
+
+  // Get all IPs from headers (including IPv4 if available)
+  const { allIPs, ipv4s } = getAllIPs(request);
+  
+  // Check if the primary IP is allowed
+  let isAllowed = isIPAllowed(clientIP, allowedIPs);
+  
+  // If primary IP is IPv6 but not allowed, check if any IPv4 in headers matches
+  // This helps when proxies include both IPv4 and IPv6 in headers
+  if (!isAllowed && isIPv6(clientIP) && ipv4s.length > 0) {
+    logger.debug(`[Middleware] Primary IP ${clientIP} (IPv6) not allowed, checking IPv4 addresses in headers: ${ipv4s.join(', ')}`);
+    for (const ipv4 of ipv4s) {
+      if (isIPAllowed(ipv4, allowedIPs)) {
+        logger.info(`[Middleware] Allowing access via IPv4 ${ipv4} found in headers (connection uses IPv6 ${clientIP})`);
+        isAllowed = true;
+        break;
+      }
+    }
+  }
+
+  if (!isAllowed) {
+    const ipType = isIPv6(clientIP) ? 'IPv6' : 'IPv4';
+    const ipv6Prefix = ipType === 'IPv6' ? getIPv6Prefix(clientIP) : '';
+    
+    logger.warn(`[Middleware] Access denied for IP: ${clientIP}`, {
+      allowedIPs,
+      path: request.nextUrl.pathname,
+      clientIP,
+      allDetectedIPs: allIPs,
+      detectedIPv4s: ipv4s,
+      ipType,
+      ipv6Prefix,
     });
+
+    return new NextResponse(
+      generateAccessDeniedPage(clientIP, ipType, ipv4s, ipv6Prefix),
+      { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    );
   }
 
   logger.info(`[Middleware] Access granted for IP: ${clientIP}`, {
-    path: request.nextUrl.pathname,
-  });
-
-  logger.debug(`[Middleware] Access granted for IP: ${clientIP}`, {
     path: request.nextUrl.pathname,
   });
 
@@ -422,4 +599,3 @@ export const config = {
     '/((?!api/health|_next/static|_next/image|favicon.ico).*)',
   ],
 };
-

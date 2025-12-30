@@ -13,4 +13,14 @@ README.md
 *.md
 .vscode
 .idea
-
+*.xlsx
+*.xls
+*.csv
+*.json
+*.yaml
+*.yml
+*.txt
+*.log
+*.error
+*.warn
+*.info
